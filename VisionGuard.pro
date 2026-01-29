@@ -20,11 +20,16 @@ LIBS += -lopencv_core \
         -lopencv_videoio \
         -lopencv_objdetect \
         -lopencv_imgcodecs
+
 # Նախագծի ֆայլերը
 SOURCES += main.cpp \
-        mainwindow.cpp
+           mainwindow.cpp \
+           camerawidget.cpp \
+    cameraworker.cpp
 
-HEADERS  += mainwindow.h
+HEADERS  += mainwindow.h \
+            camerawidget.h \
+    cameraworker.h
 
 FORMS    += mainwindow.ui
 

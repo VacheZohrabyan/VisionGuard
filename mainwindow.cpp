@@ -6,6 +6,13 @@ MainWindow::MainWindow(QWidget *parent) :
     ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
+    QWidget *central = new QWidget(this);
+    this->setCentralWidget(central);
+
+    QGridLayout* mainLayout = new QGridLayout(central);
+    central->setLayout(mainLayout);
+    mainLayout->setSpacing(10);
+    mainLayout->setContentsMargins(10, 10, 10, 10);
 
     this->setStyleSheet("MainWindow { "
                         "border-image: /home/user/Pictures/tenc"
@@ -15,7 +22,17 @@ MainWindow::MainWindow(QWidget *parent) :
     manualListFace->setGeometry(10, 450, 600, 150);
     manualListFace->setViewMode(QListView::IconMode);
     manualListFace->setIconSize(QSize(100, 100));
-    openCamera();
+
+    mainLayout->addWidget(manualListFace, 2, 0, 1, 2);
+
+    for (int i = 0; i < DEFAULT_CAMERA_SIZE; ++i)
+    {
+        CameraWidget* cameraView = new CameraWidget(this);
+        mainLayout->addWidget(cameraView, i / 2, i % 2);
+        cameraViews.push_back(cameraView);
+        cameraView->showNoSignal(i);
+    }
+    startThreads();
 }
 
 MainWindow::~MainWindow()
@@ -24,67 +41,38 @@ MainWindow::~MainWindow()
     delete ui;
 }
 
-void MainWindow::openCamera()
+void MainWindow::startThreads()
 {
-    faseCascade.load("/usr/share/opencv4/haarcascades/haarcascade_frontalface_default.xml");
-    if (!cap.open(0))
+    for (int i = 0; i < DEFAULT_CAMERA_SIZE; ++i)
     {
-        qDebug() << "failed to open camera";
-        return ;
-    }
-    cap.set(cv::CAP_PROP_FRAME_WIDTH, 1280);
-    cap.set(cv::CAP_PROP_FRAME_HEIGHT, 720);
-    timer = new QTimer(this);
-    connect(timer, &QTimer::timeout, this, &MainWindow::updateFrame);
-    timer->start(30);
-}
+        QThread* thread = new QThread(this);
+        CameraWorker* worker = new CameraWorker(i); // camIndex = i
+        worker->moveToThread(thread);
 
-void MainWindow::updateFrame()
-{
-    cv::Mat frame, gray;
-    cap >> frame;
+        connect(worker, &CameraWorker::frameReady, cameraViews[i], &CameraWidget::updateView);
 
-    if (!frame.empty())
-    {
-        static int frameCounter = 0;
-        frameCounter++;
+        connect(worker, &CameraWorker::faceDetected, this, [this](cv::Mat faceROI){
+            if (faceROI.empty()) return;
 
-        cv::cvtColor(frame, gray, cv::COLOR_BGR2GRAY);
-        cv::equalizeHist(gray, gray);
+            cv::Mat rgbFace;
+            cv::cvtColor(faceROI, rgbFace, cv::COLOR_BGR2RGB);
 
-        std::vector<cv::Rect> faces;
-        faseCascade.detectMultiScale(gray, faces, 1.1, 8, 0, cv::Size(80, 80));
+            QImage img((const unsigned char*)rgbFace.data, rgbFace.cols, rgbFace.rows, rgbFace.step, QImage::Format_RGB888);
+            QListWidgetItem* item = new QListWidgetItem(QIcon(QPixmap::fromImage(img.copy())), "Detected");
 
-        for (const auto& face: faces)
-        {
-            cv::rectangle(frame, face, cv::Scalar(0, 255, 0), 2);
-            cv::Mat faceROI = frame(face).clone();
-            if (frameCounter % 30 == 0)
-            {
-                cv::cvtColor(faceROI, faceROI, cv::COLOR_BGR2RGB);
-                QImage faceImage((const unsigned char*)faceROI.data, faceROI.cols, faceROI.rows, faceROI.step, QImage::Format_RGB888);
-                QIcon faceIcon(QPixmap::fromImage(faceImage.copy()));
-                /*QListWidgetItem * item = new QListWidgetItem(faceIcon, QString::asprintf("face %d", ui->listFace->count() + 1));
-                ui->listFace->insertItem(0, item);*/
-                QListWidgetItem* item = new QListWidgetItem(faceIcon, "Face");
+            if (manualListFace) {
                 manualListFace->insertItem(0, item);
+                if (manualListFace->count() > 50) delete manualListFace->takeItem(50);
             }
-        }
+        });
 
-        cv::cvtColor(frame, frame, cv::COLOR_BGR2RGB);
-        QImage qimeg((const unsigned char*)(frame.data), frame.cols, frame.rows, frame.step, QImage::Format_RGB888);
-        ui->labelView->setPixmap(QPixmap::fromImage(qimeg).scaled(
-            this->width(),
-            this->height(),
-            Qt::IgnoreAspectRatio, // Սա կստիպի նկարին ամբողջությամբ լցնել էկրանը
-            Qt::SmoothTransformation
-        ));
+        connect(worker, &CameraWorker::connectionLost, cameraViews[i], [this, i](){
+            cameraViews[i]->showNoSignal(i);
+        });
+
+        connect(thread, &QThread::started, worker, &CameraWorker::process);
+        connect(thread, &QThread::finished, worker, &QObject::deleteLater);
+
+        thread->start();
     }
-}
-
-void MainWindow::resizeEvent(QResizeEvent* event)
-{
-    QMainWindow::resizeEvent(event);
-    // Սա ստիպում է labelView-ին զբաղեցնել ամբողջ հասանելի տարածքը
-    ui->labelView->setGeometry(0, 0, this->width(), this->height());
 }

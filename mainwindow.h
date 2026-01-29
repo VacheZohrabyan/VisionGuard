@@ -6,10 +6,17 @@
 #include <QDebug>
 #include <QCamera>
 #include <QCamera>
+#include <QLabel>
 #include <QCameraInfo>
 #include <QCameraViewfinder>
 #include <QTimer>
 #include <QListWidgetItem>
+#include <QGridLayout>
+
+#include "camerawidget.h"
+#include "cameraworker.h"
+
+#define DEFAULT_CAMERA_SIZE 6
 
 namespace Ui {
 class MainWindow;
@@ -23,15 +30,14 @@ public:
     explicit MainWindow(QWidget *parent = 0);
     ~MainWindow();
 
-private:
-    void openCamera();
-    void updateFrame();
-    void resizeEvent(QResizeEvent* event);
+public:
+    void startThreads();
 
 private:
     Ui::MainWindow *ui;
     QTimer* timer;
-    cv::VideoCapture cap;
+    std::vector<CameraWidget*> cameraViews;
+    std::vector<cv::VideoCapture> cap;
     cv::CascadeClassifier faseCascade;
     QListWidget *manualListFace;
 };
